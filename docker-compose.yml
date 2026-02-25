@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  fsb:
+    image: python:3.10-slim-bookworm
+    restart: unless-stopped
+    container_name: fsb
+    working_dir: /app
+    environment:
+      # required
+      - API_ID=0 # change this to your ID
+      - API_HASH=e83e839202 # change this to your HASH
+      - BOT_TOKEN=token # enter your bot token
+      - BIN_CHANNEL=ID # paste channel ID
+    ports:
+      - 127.0.0.1:8000:8000
+    volumes:
+      - .:/app
+    command: >-
+      sh -c "pip install --no-cache-dir -r requirements.txt && python3 -m WebStreamer"

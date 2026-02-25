@@ -1,0 +1,6 @@
+aiohttp
+pyrogram
+python-dotenv
+TgCrypto
+psutil
+motor>=3.3.0
