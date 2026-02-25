@@ -2676,7 +2676,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
                 modal.classList.remove("active");
                 bar.style.width = "0%";
                 pct.textContent = "0%";
-                window.location.href = finalUrl;
+                window.location.href = finalUrl + (finalUrl.includes('?') ? '&' : '?') + 'dl=1';
             }
         }, 850);
     };
