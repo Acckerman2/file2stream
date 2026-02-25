@@ -708,7 +708,8 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
         }
 
         function download() {
-            window.location.href = finalUrl;
+            const downloadUrl = finalUrl + (finalUrl.includes('?') ? '&' : '?') + 'dl=1';
+            window.location.href = downloadUrl;
         }
 
         document.addEventListener('contextmenu', function (e) {
@@ -827,6 +828,7 @@ async def stream_handler(request: web.Request):
 
 async def media_streamer(request: web.Request, message_id: int, secure_hash: str):
     range_header = request.headers.get("Range", 0)
+    force_download = request.rel_url.query.get("dl") == "1"  # Check for download parameter
 
     file_id, tg_connect, index = await _resolve_file_context(message_id, secure_hash, request.remote)
     file_size = file_id.file_size
@@ -865,7 +867,8 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     if not mime_type:
         mime_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
 
-    if "video/" in mime_type or "audio/" in mime_type or "/html" in mime_type:
+    # Only set inline if not forced download and is media file
+    if not force_download and ("video/" in mime_type or "audio/" in mime_type or "/html" in mime_type):
         disposition = "inline"
 
     headers = {
