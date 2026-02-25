@@ -71,7 +71,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-    <title>__FILE_NAME_HTML__ — Acckerman Stream Deck</title>
+    <title>__FILE_NAME_HTML__ — AckerStreamX</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@700;800;900&display=swap" rel="stylesheet">
@@ -79,7 +79,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
     /* ═══════════════════════════════════════════════
-       CINEMATIC DESIGN SYSTEM — Acckerman Stream Deck
+       CINEMATIC DESIGN SYSTEM — AckerStreamX
        Deep blacks, warm gold, dramatic spotlights
        ═══════════════════════════════════════════════ */
     :root {
@@ -1536,7 +1536,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
         .ft-inner { flex-direction: column; text-align: center; gap: 12px; }
         .ft-brand { font-size: 14px; }
 
-        .mobile-bar { display: flex; }
+        .mobile-bar { display: flex; animation: slideUpBar 0.5s 0.3s var(--ease-spring) both; }
         .mb-btn { padding: 12px 8px !important; font-size: 11px !important; }
         .toast-bar { bottom: 76px; font-size: 12px; padding: 12px 18px; }
 
@@ -1590,6 +1590,11 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
 
         /* Kill all infinite CSS animations that cause repaint during scroll */
         .s-card { animation: none !important; }
+        .sidebar { opacity: 1 !important; }
+        .s-card.visible { animation: none !important; opacity: 1 !important; }
+        .feat-row.visible { animation: none !important; opacity: 1 !important; }
+        .ext-btn.visible { animation: none !important; opacity: 1 !important; }
+        .info-block.visible { animation: none !important; opacity: 1 !important; }
         .player-section { animation: cinemaReveal 1s var(--ease-dramatic) forwards !important; }
         .pinfo-title { animation: none !important; }
         .size-badge { animation: none !important; }
@@ -1730,7 +1735,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
         height: 100%;
         background: var(--gradient-gold);
         border-radius: 999px;
-        animation: loaderFill 1.2s var(--ease) forwards;
+        animation: loaderFill 2.8s var(--ease) forwards;
     }
     @keyframes loaderPulse {
         0%, 100% { opacity: 1; }
@@ -2101,6 +2106,11 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
     }
     .time-greeting i { font-size: 10px; color: var(--gold); }
 
+    @keyframes slideUpBar {
+        from { transform: translateY(100%); }
+        to { transform: translateY(0); }
+    }
+
     /* ── Enhanced page loader with cinema reels ── */
     .loader-reel {
         position: absolute;
@@ -2285,10 +2295,20 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
 <div class="page-loader" id="pageLoader">
     <i class="fas fa-compact-disc loader-reel"></i>
     <i class="fas fa-compact-disc loader-reel"></i>
-    <div class="loader-brand">Acckerman Stream Deck</div>
+    <div class="loader-brand">AckerStreamX</div>
     <div class="loader-bar"><div class="loader-bar-inner"></div></div>
     <div class="loader-tagline">Preparing Your Cinema</div>
 </div>
+<script>
+(function(){
+    var l = document.getElementById('pageLoader');
+    if (!l) return;
+    setTimeout(function(){
+        l.classList.add('hidden');
+        setTimeout(function(){ try { l.remove(); } catch(e){} }, 800);
+    }, 3000);
+})();
+</script>
 
 <!-- Scroll Progress -->
 <div class="scroll-progress" id="scrollProgress"></div>
@@ -2309,7 +2329,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
     <div class="nav-inner">
         <a class="brand" href="#">
             <div class="brand-mark"><i class="fas fa-play"></i></div>
-            <span class="brand-name">Acckerman Stream Deck</span>
+            <span class="brand-name">AckerStreamX</span>
         </a>
         <div class="nav-right">
             <span class="badge badge-live"><span class="pulse-dot"></span> Streaming</span>
@@ -2328,7 +2348,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
         <span class="ticker-item t-gold"><i class="fas fa-film"></i> Cinema Quality</span>
         <span class="ticker-item t-gold"><i class="fas fa-crown"></i> No Ads</span>
         <span class="ticker-item"><i class="fas fa-clock"></i> 24/7 Available</span>
-        <span class="ticker-item"><i class="fas fa-wand-magic-sparkles"></i> Acckerman Powered</span>
+        <span class="ticker-item"><i class="fas fa-wand-magic-sparkles"></i> AckerStreamX Powered</span>
         <span class="ticker-item t-gold"><i class="fas fa-star"></i> Premium Streaming</span>
         <span class="ticker-item"><i class="fas fa-bolt"></i> Ultra-Fast Delivery</span>
         <span class="ticker-item"><i class="fas fa-shield-halved"></i> Encrypted Transfer</span>
@@ -2366,7 +2386,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
                 <div class="film-holes left" id="filmHoles1"></div>
                 <div class="film-holes right" id="filmHoles2"></div>
                 <video id="player" playsinline controls>
-                    <source src="__FILE_URL_HTML__" type="video/mp4">
+                    <source src=__FILE_URL_HTML__ type="video/mp4">
                 </video>
             </div>
             <div class="pinfo">
@@ -2540,23 +2560,30 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
     <div class="ft-inner">
         <div class="ft-brand">
             <div class="ft-icon"><i class="fas fa-play"></i></div>
-            <span class="ft-brand-text">Acckerman Stream Deck</span>
+            <span class="ft-brand-text">AckerStreamX</span>
         </div>
         <div class="ft-links">
             <a href="https://telegram.dog" target="_blank" rel="noopener">Report Issues</a>
             <a href="https://telegram.dog/sydney_sweeney_robot" target="_blank" rel="noopener">Get Your Bot</a>
         </div>
-        <div class="ft-copy">&copy; ACCKERMAN&deg;</div>
+        <div class="ft-copy">&copy; ACKERSTREAMX&deg;</div>
     </div>
 </footer>
 
 <!-- Plyr -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/plyr/3.7.8/plyr.js"></script>
 <script>
-    const player = new Plyr('#player', {
-        controls: ['play-large', 'play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings', 'pip', 'fullscreen'],
-        settings: ['quality', 'speed'],
-    });
+(function(){
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/plyr/3.7.8/plyr.js';
+    s.onload = function(){
+        new Plyr('#player', {
+            controls: ['play-large','play','progress','current-time','duration','mute','volume','settings','pip','fullscreen'],
+            settings: ['quality','speed']
+        });
+    };
+    s.onerror = function(){ console.warn('Plyr CDN failed to load'); };
+    document.head.appendChild(s);
+})();
 </script>
 
 <script>
@@ -2567,6 +2594,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
     const currentUrl = window.location.href;
     const finalUrl = currentUrl.replace("/watch/", "/");
     const streamRoot = finalUrl.endsWith('/') ? finalUrl.slice(0, -1) : finalUrl;
+    const isMobile = window.matchMedia('(max-width: 680px)').matches;
 
 
 
@@ -2789,29 +2817,11 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
         nsTextEl.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
     }
 
-    /* ── Page Loader ── */
-    const loader = document.getElementById('pageLoader');
-    function hideLoader() {
-        if (!loader || loader.dataset.hidden) return;
-        loader.dataset.hidden = '1';
-        loader.classList.add('hidden');
-        setTimeout(() => { try { loader.remove(); } catch(e){} }, 800);
-    }
-    if (loader) {
-        // Primary: on window load
-        window.addEventListener('load', () => setTimeout(hideLoader, 300));
-        // Fallback: if load never fires, force-hide after 2.5s
-        setTimeout(hideLoader, 2500);
-        // Extra fallback: if DOM is already loaded
-        if (document.readyState === 'complete') setTimeout(hideLoader, 300);
-    }
-
     /* ── Unified scroll handler (single rAF-throttled loop) ── */
     const scrollBar = document.getElementById('scrollProgress');
     const navEl = document.querySelector('.nav');
     const backTopBtn = document.getElementById('backTop');
     const filmStrip = document.querySelector('.film-strip-inner');
-    const isMobile = window.matchMedia('(max-width: 680px)').matches;
     let scrollRafPending = false;
     let prevNavScrolled = false;
     let prevBackTopVisible = false;
@@ -2867,7 +2877,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
     /* ── Smooth reveal for player info elements ── */
     const pinfo = document.querySelector('.pinfo');
     if (pinfo) {
-        const revealEls = pinfo.querySelectorAll('.pinfo-top, .cinema-tags, .cta-grid');
+        const revealEls = pinfo.querySelectorAll('.pinfo-top, .cinema-tags');
         revealEls.forEach((el, i) => {
             el.style.opacity = '0';
             el.style.transform = 'translateY(15px)';
@@ -3005,13 +3015,6 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
 
     /* ── Mobile bottom bar appear animation ── */
     const mobileBar = document.querySelector('.mobile-bar');
-    if (mobileBar) {
-        mobileBar.style.transform = 'translateY(100%)';
-        mobileBar.style.transition = 'transform 0.5s var(--ease-spring)';
-        setTimeout(() => {
-            mobileBar.style.transform = 'translateY(0)';
-        }, 1200);
-    }
 
     /* ── Idle gold dust effect (desktop only) ── */
     if (window.matchMedia('(hover: hover)').matches) {
@@ -3279,8 +3282,8 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
     if (isMobile && mobileBar) {
         let lastMobileScroll = 0;
         let mobileBarHidden = false;
+        mobileBar.style.transition = 'transform 0.3s var(--ease)';
         window.addEventListener('scroll', () => {
-            if (scrollRafPending) return; // piggyback off the rAF guard
             const st = window.scrollY;
             const shouldHide = st > lastMobileScroll && st > 200;
             if (shouldHide !== mobileBarHidden) {
@@ -3294,7 +3297,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
     /* ── Footer year auto-update ── */
     const ftCopy = document.querySelector('.ft-copy');
     if (ftCopy) {
-        ftCopy.innerHTML = `&copy; ${new Date().getFullYear()} ACCKERMAN&deg;`;
+        ftCopy.innerHTML = `&copy; ${new Date().getFullYear()} ACKERSTREAMX&deg;`;
     }
 
     /* ── Easter egg: Click brand 5 times → gold rain ── */
@@ -3358,6 +3361,7 @@ WATCH_PAGE_TEMPLATE = """<!DOCTYPE html>
 
 </body>
 </html>
+
 """
 
 
