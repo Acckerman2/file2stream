@@ -2,7 +2,7 @@ import math
 import asyncio
 import logging
 from WebStreamer import Var
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 from WebStreamer.bot import work_loads
 from pyrogram import Client, utils, raw
 from .file_properties import get_file_ids
@@ -179,6 +179,9 @@ class ByteStreamer:
     ) -> Union[str, None]:
         """
         Custom generator that yields the bytes of the media file.
+        Uses retry-with-backoff on every chunk fetch and prefetches the next
+        chunk while the current one is being sent to the client, eliminating
+        the round-trip stall that causes buffering and intermittent pauses.
         """
         client = self.client
         work_loads[index] += 1
@@ -188,40 +191,111 @@ class ByteStreamer:
         current_part = 1
         location = await self.get_location(file_id)
 
-        try:
-            r = await media_session.send(
-                raw.functions.upload.GetFile(
-                    location=location, offset=offset, limit=chunk_size
-                ),
-            )
-            if isinstance(r, raw.types.upload.File):
-                while True:
-                    chunk = r.bytes
-                    if not chunk:
-                        break
-                    elif part_count == 1:
-                        yield chunk[first_part_cut:last_part_cut]
-                    elif current_part == 1:
-                        yield chunk[first_part_cut:]
-                    elif current_part == part_count:
-                        yield chunk[:last_part_cut]
-                    else:
-                        yield chunk
+        # ── Retry helper ────────────────────────────────────────────────────
+        async def _fetch_chunk(off: int, max_retries: int = 5) -> Optional[raw.types.upload.File]:
+            """Fetch one chunk with exponential-backoff retry.
 
-                    current_part += 1
-                    offset += chunk_size
-
-                    if current_part > part_count:
-                        break
-
+            Handles FloodWait, transient timeouts, and generic network errors
+            so a momentary hiccup does not abort the entire download.
+            """
+            last_exc: Optional[Exception] = None
+            for attempt in range(max_retries):
+                try:
                     r = await media_session.send(
                         raw.functions.upload.GetFile(
-                            location=location, offset=offset, limit=chunk_size
+                            location=location, offset=off, limit=chunk_size
                         ),
                     )
-        except (TimeoutError, AttributeError, asyncio.CancelledError, ConnectionResetError, BrokenPipeError, GeneratorExit):
+                    return r
+                except FloodWait as e:
+                    wait = min(e.value, 30) + 1
+                    logger.warning(
+                        f"FloodWait {e.value}s on chunk offset={off}, "
+                        f"sleeping {wait}s (attempt {attempt + 1}/{max_retries})"
+                    )
+                    await asyncio.sleep(wait)
+                    last_exc = e
+                except (TimeoutError, asyncio.TimeoutError) as e:
+                    wait = 2 ** attempt          # 1 s, 2 s, 4 s, 8 s, 16 s
+                    logger.warning(
+                        f"Timeout on chunk offset={off}, "
+                        f"retry {attempt + 1}/{max_retries} in {wait}s"
+                    )
+                    await asyncio.sleep(wait)
+                    last_exc = e
+                except (ConnectionResetError, BrokenPipeError, OSError) as e:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        f"Connection error on chunk offset={off}: {e}, "
+                        f"retry {attempt + 1}/{max_retries} in {wait}s"
+                    )
+                    await asyncio.sleep(wait)
+                    last_exc = e
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise
+                    wait = 2 ** attempt
+                    logger.warning(
+                        f"Unexpected error on chunk offset={off}: {e}, "
+                        f"retry {attempt + 1}/{max_retries} in {wait}s"
+                    )
+                    await asyncio.sleep(wait)
+                    last_exc = e
+            raise last_exc or RuntimeError(f"Failed to fetch chunk at offset={off}")
+
+        # ── Prefetch-pipeline streaming ──────────────────────────────────────
+        # We kick off the first chunk request, then while yielding chunk N we
+        # already start fetching chunk N+1 in the background.  This hides the
+        # Telegram round-trip latency from the client and keeps the pipe full.
+        prefetch_task: Optional[asyncio.Task] = None
+        try:
+            # Kick off the very first chunk
+            prefetch_task = asyncio.create_task(_fetch_chunk(offset))
+
+            while current_part <= part_count:
+                r = await prefetch_task
+                prefetch_task = None
+
+                if not isinstance(r, raw.types.upload.File) or not r.bytes:
+                    break
+
+                chunk = r.bytes
+
+                # Pre-fetch the *next* chunk in the background before we yield
+                # the current one, so Telegram latency is hidden by the write.
+                next_offset = offset + chunk_size
+                if current_part < part_count:
+                    prefetch_task = asyncio.create_task(_fetch_chunk(next_offset))
+
+                # Slice the chunk according to the requested byte range
+                if part_count == 1:
+                    yield chunk[first_part_cut:last_part_cut]
+                elif current_part == 1:
+                    yield chunk[first_part_cut:]
+                elif current_part == part_count:
+                    yield chunk[:last_part_cut]
+                else:
+                    yield chunk
+
+                current_part += 1
+                offset += chunk_size
+
+                if prefetch_task is None:
+                    # We were on the last part; nothing more to do
+                    break
+
+        except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError, GeneratorExit):
             logger.debug("Download stream was cancelled or reset mid-transfer")
+        except Exception as e:
+            logger.warning(f"Stream error after {current_part} parts: {e}")
         finally:
+            # Cancel any in-flight prefetch so we don't leak background tasks
+            if prefetch_task and not prefetch_task.done():
+                prefetch_task.cancel()
+                try:
+                    await prefetch_task
+                except (asyncio.CancelledError, Exception):
+                    pass
             logger.debug(f"Finished yielding file with {current_part} parts.")
             work_loads[index] -= 1
 

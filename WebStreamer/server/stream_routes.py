@@ -3465,9 +3465,16 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     file_size = file_id.file_size
 
     if range_header:
-        from_bytes, until_bytes = range_header.replace("bytes=", "").split("-")
-        from_bytes = int(from_bytes)
-        until_bytes = int(until_bytes) if until_bytes else file_size - 1
+        try:
+            # Handle "bytes=START-END" — take only the first range if multiple
+            # ranges are given (multi-range requests are rare for streaming).
+            ranges_part = range_header.replace("bytes=", "").split(",")[0].strip()
+            start_str, end_str = ranges_part.split("-", 1)
+            from_bytes = int(start_str) if start_str else 0
+            until_bytes = int(end_str) if end_str else file_size - 1
+        except (ValueError, AttributeError):
+            from_bytes = 0
+            until_bytes = file_size - 1
     else:
         from_bytes = request.http_range.start or 0
         until_bytes = (request.http_range.stop or file_size) - 1
@@ -3502,12 +3509,24 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     if not force_download and ("video/" in mime_type or "audio/" in mime_type or "/html" in mime_type):
         disposition = "inline"
 
+    # Build a weak ETag from message_id + requested range so browsers/players
+    # can validate cached segments and avoid unnecessary re-downloads.
+    etag = f'W/"{message_id}-{from_bytes}-{until_bytes}"'
+
     headers = {
-        "Content-Type": f"{mime_type}",
+        "Content-Type": mime_type,
         "Content-Range": f"bytes {from_bytes}-{until_bytes}/{file_size}",
         "Content-Length": str(req_length),
         "Content-Disposition": f'{disposition}; filename="{file_name}"',
         "Accept-Ranges": "bytes",
+        # Allow players/browsers to cache segments for 1 hour; avoids
+        # re-fetching the same byte range when seeking back.
+        "Cache-Control": "public, max-age=3600",
+        "ETag": etag,
+        # Keep the TCP connection alive between range requests so the player
+        # doesn't incur a new TLS handshake for every 1 MB chunk.
+        "Connection": "keep-alive",
+        "X-Content-Type-Options": "nosniff",
     }
 
     response = web.StreamResponse(status=206 if range_header else 200, headers=headers)
