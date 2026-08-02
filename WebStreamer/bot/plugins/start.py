@@ -38,7 +38,7 @@ async def start(_, m: Message):
         pass
 
     await m.reply_photo(
-        photo="https://envs.sh/NEV.jpg",
+        photo="https://files.catbox.moe/0q8fzq.jpg",
         caption="✨ ʜɪ ɪ'ᴍ Mrunal Thakur! 📁🔗\n\n"
                 "🚀 ᴜᴘʟᴏᴀᴅ ᴀɴʏ ꜰɪʟᴇ ᴀɴᴅ ɢᴇᴛ ɪɴꜱᴛᴀɴᴛ ᴅɪʀᴇᴄᴛ ʟɪɴᴋꜱ 🌐\n\n"
                 "💎 ꜰᴀꜱᴛ ⚡ | ꜱᴇᴄᴜʀᴇ 🔒 | ᴇᴀꜱʏ ᴛᴏ ᴜꜱᴇ 💫\n\n"
