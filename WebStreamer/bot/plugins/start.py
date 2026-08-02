@@ -39,7 +39,7 @@ async def start(_, m: Message):
 
     await m.reply_photo(
         photo="https://envs.sh/NEV.jpg",
-        caption="✨ ʜɪ ɪ'ᴍ Sydney Sweeney! 📁🔗\n\n"
+        caption="✨ ʜɪ ɪ'ᴍ Mrunal Thakur! 📁🔗\n\n"
                 "🚀 ᴜᴘʟᴏᴀᴅ ᴀɴʏ ꜰɪʟᴇ ᴀɴᴅ ɢᴇᴛ ɪɴꜱᴛᴀɴᴛ ᴅɪʀᴇᴄᴛ ʟɪɴᴋꜱ 🌐\n\n"
                 "💎 ꜰᴀꜱᴛ ⚡ | ꜱᴇᴄᴜʀᴇ 🔒 | ᴇᴀꜱʏ ᴛᴏ ᴜꜱᴇ 💫\n\n"
                 "💬 ᴊᴜꜱᴛ ꜱᴇɴᴅ ᴀ ᴘʜᴏᴛᴏ, ᴠɪᴅᴇᴏ, ᴏʀ ᴅᴏᴄ — ᴀɴᴅ ɪ'ʟʟ ʜᴀɴᴅʟᴇ ᴛʜᴇ ʀᴇꜱᴛ 😎",
