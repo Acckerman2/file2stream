@@ -1,4 +1,5 @@
 import logging
+import re
 from pyrogram import filters, errors
 from WebStreamer.vars import Var
 from urllib.parse import quote_plus
@@ -9,6 +10,16 @@ from WebStreamer.bot.plugins.admin import is_banned
 from WebStreamer.database import db
 from pyrogram.enums.parse_mode import ParseMode
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+
+def clean_link(url: str) -> str:
+    if not url:
+        return url
+    url = url.strip()
+    cloud_domains = [".koyeb.app", ".herokuapp.com", ".render.com", ".onrender.com", ".railway.app"]
+    if any(cd in url.lower() for cd in cloud_domains) and url.startswith("http://"):
+        url = "https://" + url[7:]
+    url = re.sub(r'(https?://[^/:]+):\d+', r'\1', url)
+    return url
 
 def humanbytes(size):
     if not size:
@@ -49,8 +60,8 @@ async def media_receive_handler(_, m: Message):
     
     log_msg = await m.forward(chat_id=Var.BIN_CHANNEL)
     file_hash = get_hash(log_msg, Var.HASH_LENGTH)
-    stream_link = f"{Var.URL}{log_msg.id}/{quote_plus(get_name(m))}?hash={file_hash}"
-    short_link = f"{Var.URL}{file_hash}{log_msg.id}"
+    stream_link = clean_link(f"{Var.URL}{log_msg.id}/{quote_plus(get_name(m))}?hash={file_hash}")
+    short_link = clean_link(f"{Var.URL}{file_hash}{log_msg.id}")
     logger.info(f"Generated link: {stream_link} for {m.from_user.first_name}")
     # Send a details note to BIN_CHANNEL only
     try:
@@ -68,7 +79,7 @@ async def media_receive_handler(_, m: Message):
     except Exception as e:
         logger.warning(f"Failed to send details to BIN_CHANNEL: {e}")
     try:
-        watch_link = f"{Var.URL}watch/{log_msg.id}/{quote_plus(get_name(m))}?hash={file_hash}"
+        watch_link = clean_link(f"{Var.URL}watch/{log_msg.id}/{quote_plus(get_name(m))}?hash={file_hash}")
         file_name = get_name(m)
         file_size = humanbytes(get_media_from_message(m).file_size)
 
