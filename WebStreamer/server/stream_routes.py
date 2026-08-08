@@ -3471,7 +3471,10 @@ async def stream_handler(request: web.Request):
 
 async def media_streamer(request: web.Request, message_id: int, secure_hash: str):
     range_header = request.headers.get("Range", 0)
-    force_download = request.rel_url.query.get("dl") == "1"  # Check for download parameter
+    force_download = (
+        request.rel_url.query.get("dl") in ("1", "true", "yes", "t")
+        or request.rel_url.query.get("download") in ("1", "true", "yes", "t")
+    )
 
     file_id, tg_connect, index = await _resolve_file_context(message_id, secure_hash, request.remote)
     file_size = file_id.file_size
