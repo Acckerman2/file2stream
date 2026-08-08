@@ -1,8 +1,44 @@
 import sys
+import re
 from os import environ
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _build_url():
+    port = int(environ.get("PORT", "8080") if environ.get("PORT") else "8080")
+    bind_addr = str(environ.get("WEB_SERVER_BIND_ADDRESS", "0.0.0.0"))
+    has_ssl = str(environ.get("HAS_SSL", "0").lower()) in ("1", "true", "t", "yes", "y")
+    no_port = str(environ.get("NO_PORT", "1").lower()) in ("1", "true", "t", "yes", "y")
+    fqdn = str(environ.get("FQDN", bind_addr)).strip()
+    raw_url = str(environ.get("URL", "")).strip()
+
+    cloud_domains = [".koyeb.app", ".herokuapp.com", ".render.com", ".onrender.com", ".railway.app"]
+
+    if raw_url:
+        base = raw_url
+    else:
+        is_cloud = any(cd in fqdn.lower() for cd in cloud_domains)
+        use_ssl = has_ssl or is_cloud
+        scheme = "https" if use_ssl else "http"
+        base = f"{scheme}://{fqdn}"
+
+    if not base.startswith("http://") and not base.startswith("https://"):
+        is_cloud = any(cd in base.lower() for cd in cloud_domains)
+        base = ("https://" if (has_ssl or is_cloud) else "http://") + base
+
+    is_cloud_app = any(cd in base.lower() for cd in cloud_domains)
+    if is_cloud_app and base.startswith("http://"):
+        base = "https://" + base[7:]
+
+    if no_port or is_cloud_app or port in (80, 443):
+        base = re.sub(r'(https?://[^/:]+):\d+', r'\1', base)
+
+    if not base.endswith("/"):
+        base += "/"
+
+    return base
 
 
 class Var(object):
@@ -24,10 +60,8 @@ class Var(object):
     HASH_LENGTH = int(environ.get("HASH_LENGTH", 6))
     if not 5 < HASH_LENGTH < 64:
         sys.exit("Hash length should be greater than 5 and less than 64")
-    FQDN = str(environ.get("FQDN", BIND_ADDRESS))
-    _clean_fqdn = FQDN.split(":")[0] if (NO_PORT or PORT in (80, 443)) and ":" in FQDN else FQDN
-    _port_str = "" if (NO_PORT or PORT in (80, 443)) else f":{PORT}"
-    URL = f"http{'s' if HAS_SSL else ''}://{_clean_fqdn}{_port_str}/"
+    FQDN = str(environ.get("FQDN", BIND_ADDRESS)).strip()
+    URL = _build_url()
     KEEP_ALIVE = str(environ.get("KEEP_ALIVE", "1").lower()) in  ("1", "true", "t", "yes", "y")
     DEBUG = str(environ.get("DEBUG", "1").lower()) in ("1", "true", "t", "yes", "y")
     USE_SESSION_FILE = str(environ.get("USE_SESSION_FILE", "0").lower()) in ("1", "true", "t", "yes", "y")
