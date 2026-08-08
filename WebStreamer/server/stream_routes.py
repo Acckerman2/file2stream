@@ -3408,7 +3408,19 @@ async def watch_page_handler(request: web.Request):
             raise InvalidHash
 
         name_part = f"/{raw_name}" if raw_name else ""
-        base_url = Var.URL.rstrip('/')
+        host_header = request.headers.get("X-Forwarded-Host", request.headers.get("Host", ""))
+        proto_header = request.headers.get("X-Forwarded-Proto", request.scheme)
+
+        if host_header:
+            clean_host = re.sub(r':\d+$', '', host_header.strip())
+            cloud_domains = [".koyeb.app", ".herokuapp.com", ".render.com", ".onrender.com", ".railway.app"]
+            if any(cd in clean_host.lower() for cd in cloud_domains) or Var.HAS_SSL:
+                proto_header = "https"
+            base_url = f"{proto_header}://{clean_host}"
+        else:
+            base_url = Var.URL.rstrip('/')
+
+        base_url = re.sub(r'(https?://[^/:]+):\d+', r'\1', base_url)
         stream_src = f"{base_url}/{message_id}{name_part}?hash={secure_hash}"
 
         file_id, _, _ = await _resolve_file_context(message_id, secure_hash, request.remote)

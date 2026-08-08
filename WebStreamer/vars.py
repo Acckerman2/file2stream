@@ -11,7 +11,19 @@ def _build_url():
     bind_addr = str(environ.get("WEB_SERVER_BIND_ADDRESS", "0.0.0.0"))
     has_ssl = str(environ.get("HAS_SSL", "0").lower()) in ("1", "true", "t", "yes", "y")
     no_port = str(environ.get("NO_PORT", "1").lower()) in ("1", "true", "t", "yes", "y")
-    fqdn = str(environ.get("FQDN", bind_addr)).strip()
+
+    # Auto-detect cloud public domain if available
+    auto_domain = (
+        environ.get("KOYEB_PUBLIC_DOMAIN")
+        or environ.get("RENDER_EXTERNAL_HOSTNAME")
+        or environ.get("RAILWAY_PUBLIC_DOMAIN")
+        or environ.get("RAILWAY_STATIC_URL")
+        or (f"{environ['HEROKU_APP_NAME']}.herokuapp.com" if environ.get("HEROKU_APP_NAME") else None)
+        or ""
+    ).strip()
+
+    fqdn_fallback = auto_domain if auto_domain else bind_addr
+    fqdn = str(environ.get("FQDN", fqdn_fallback)).strip()
     raw_url = str(environ.get("URL", "")).strip()
 
     cloud_domains = [".koyeb.app", ".herokuapp.com", ".render.com", ".onrender.com", ".railway.app"]
@@ -19,16 +31,16 @@ def _build_url():
     if raw_url:
         base = raw_url
     else:
-        is_cloud = any(cd in fqdn.lower() for cd in cloud_domains)
+        is_cloud = any(cd in fqdn.lower() for cd in cloud_domains) or bool(auto_domain)
         use_ssl = has_ssl or is_cloud
         scheme = "https" if use_ssl else "http"
         base = f"{scheme}://{fqdn}"
 
     if not base.startswith("http://") and not base.startswith("https://"):
-        is_cloud = any(cd in base.lower() for cd in cloud_domains)
+        is_cloud = any(cd in base.lower() for cd in cloud_domains) or bool(auto_domain)
         base = ("https://" if (has_ssl or is_cloud) else "http://") + base
 
-    is_cloud_app = any(cd in base.lower() for cd in cloud_domains)
+    is_cloud_app = any(cd in base.lower() for cd in cloud_domains) or bool(auto_domain)
     if is_cloud_app and base.startswith("http://"):
         base = "https://" + base[7:]
 
