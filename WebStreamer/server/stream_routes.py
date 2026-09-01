@@ -13,6 +13,7 @@ from aiohttp.http_exceptions import BadStatusLine
 from WebStreamer.bot import multi_clients, work_loads
 from WebStreamer.server.exceptions import FIleNotFound, InvalidHash
 from WebStreamer import Var, utils, StartTime, __version__, StreamBot
+from WebStreamer.utils.metrics import metrics
 
 logger = logging.getLogger("routes")
 
@@ -21,6 +22,7 @@ routes = web.RouteTableDef()
 # Simple counter for total requests served by the HTTP server (watch + stream)
 requests_served = 0
 class_cache = {}
+stream_semaphore = asyncio.Semaphore(Var.MAX_CONCURRENT_STREAMS)
 
 
 def _human_readable_size(size: int) -> str:
@@ -3373,6 +3375,7 @@ async def root_route_handler(_):
             "uptime": utils.get_readable_time(time.time() - StartTime),
             "telegram_bot": "@" + StreamBot.username,
             "connected_bots": len(multi_clients),
+            "performance_metrics": metrics.get_summary(),
             "loads": dict(
                 ("bot" + str(c + 1), l)
                 for c, (_, l) in enumerate(
@@ -3481,8 +3484,6 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
 
     if range_header:
         try:
-            # Handle "bytes=START-END" — take only the first range if multiple
-            # ranges are given (multi-range requests are rare for streaming).
             ranges_part = range_header.replace("bytes=", "").split(",")[0].strip()
             start_str, end_str = ranges_part.split("-", 1)
             from_bytes = int(start_str) if start_str else 0
@@ -3494,22 +3495,23 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         from_bytes = request.http_range.start or 0
         until_bytes = (request.http_range.stop or file_size) - 1
 
-    if (until_bytes > file_size) or (from_bytes < 0) or (until_bytes < from_bytes):
+    until_bytes = min(until_bytes, file_size - 1)
+
+    if (from_bytes >= file_size) or (from_bytes < 0) or (until_bytes < from_bytes):
         return web.Response(
             status=416,
-            body="416: Range not satisfiable",
+            body="416: Range Not Satisfiable",
             headers={"Content-Range": f"bytes */{file_size}"},
         )
 
-    chunk_size = 1024 * 1024  # Fixed 1MB chunk size - Telegram's optimal limit
-    until_bytes = min(until_bytes, file_size - 1)
-
+    chunk_size = 1024 * 1024  # 1MB - Telegram optimal limit
     offset = from_bytes - (from_bytes % chunk_size)
     first_part_cut = from_bytes - offset
     last_part_cut = until_bytes % chunk_size + 1
 
     req_length = until_bytes - from_bytes + 1
-    part_count = math.ceil(until_bytes / chunk_size) - math.floor(offset / chunk_size)
+    part_count = math.ceil((until_bytes + 1) / chunk_size) - math.floor(offset / chunk_size)
+
     body = tg_connect.yield_file(
         file_id, index, offset, first_part_cut, last_part_cut, part_count, chunk_size
     )
@@ -3520,12 +3522,9 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     if not mime_type:
         mime_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
 
-    # Only set inline if not forced download and is media file
     if not force_download and ("video/" in mime_type or "audio/" in mime_type or "/html" in mime_type):
         disposition = "inline"
 
-    # Build a weak ETag from message_id + requested range so browsers/players
-    # can validate cached segments and avoid unnecessary re-downloads.
     etag = f'W/"{message_id}-{from_bytes}-{until_bytes}"'
 
     headers = {
@@ -3534,12 +3533,8 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
         "Content-Length": str(req_length),
         "Content-Disposition": f'{disposition}; filename="{file_name}"',
         "Accept-Ranges": "bytes",
-        # Allow players/browsers to cache segments for 1 hour; avoids
-        # re-fetching the same byte range when seeking back.
         "Cache-Control": "public, max-age=3600",
         "ETag": etag,
-        # Keep the TCP connection alive between range requests so the player
-        # doesn't incur a new TLS handshake for every 1 MB chunk.
         "Connection": "keep-alive",
         "X-Content-Type-Options": "nosniff",
     }
@@ -3547,24 +3542,38 @@ async def media_streamer(request: web.Request, message_id: int, secure_hash: str
     response = web.StreamResponse(status=206 if range_header else 200, headers=headers)
     await response.prepare(request)
 
+    metrics.stream_started()
+    start_time = time.time()
+    ttfb_sec = 0.0
+    bytes_sent = 0
+
     try:
-        async for chunk in body:
-            await response.write(chunk)
+        async with stream_semaphore:
+            async for chunk in body:
+                if ttfb_sec == 0.0:
+                    ttfb_sec = time.time() - start_time
+                await response.write(chunk)
+                bytes_sent += len(chunk)
+
+        duration_sec = time.time() - start_time
+        metrics.stream_finished(bytes_sent, duration_sec, ttfb_sec)
+
     except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError, BadStatusLine):
         logger.debug("Client disconnected while streaming %s", file_name)
+        metrics.stream_failed()
     except OSError as e:
-        # Handle socket errors (e.g., "socket.send() raised exception")
-        if e.errno in (10053, 10054, 32, 104):  # Connection aborted/reset codes
+        if e.errno in (10053, 10054, 32, 104):
             logger.debug("Client disconnected (OSError) while streaming %s", file_name)
         else:
             logger.exception("OS error while streaming %s", file_name)
+        metrics.stream_failed()
     except Exception:
         logger.exception("Unexpected error while streaming %s", file_name)
+        metrics.stream_failed()
     finally:
         try:
             await response.write_eof()
         except (ConnectionResetError, BrokenPipeError, RuntimeError, asyncio.CancelledError, OSError):
-            # Client already closed the connection; nothing else to do.
             pass
 
     return response

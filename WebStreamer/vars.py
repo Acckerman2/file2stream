@@ -85,6 +85,11 @@ class Var(object):
     except Exception:
         ADMIN = 0
     
+    # Concurrency & Cache Optimization Controls
+    MAX_CONCURRENT_STREAMS = int(environ.get("MAX_CONCURRENT_STREAMS", "50"))
+    PREFETCH_CHUNKS = int(environ.get("PREFETCH_CHUNKS", "2"))
+    CACHE_TTL = int(environ.get("CACHE_TTL", "7200"))  # 2 hours default TTL
+
     # MongoDB Database Configuration
     DATABASE_URL = str(environ.get("DATABASE_URL", "mongodb+srv://file2stream:acckerman@cluster0.cp947zc.mongodb.net/?appName=Cluster0"))
     DATABASE_NAME = str(environ.get("DATABASE_NAME", "WebStreamer"))

@@ -7,6 +7,7 @@ from aiohttp import web
 from pyrogram import idle
 from WebStreamer import utils
 from WebStreamer import StreamBot
+from WebStreamer.database import db
 from WebStreamer.server import web_server
 from WebStreamer.bot.clients import initialize_clients
 
@@ -39,6 +40,10 @@ async def start_services():
     StreamBot.username = bot_info.username
     logging.info("Initialized Telegram Bot")
     await initialize_clients()
+    try:
+        await db.ensure_indexes()
+    except Exception as e:
+        logging.warning(f"Database indexing skipped: {e}")
     if Var.KEEP_ALIVE:
         asyncio.create_task(utils.ping_server())
     await server.setup()

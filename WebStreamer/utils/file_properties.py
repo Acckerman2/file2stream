@@ -8,6 +8,44 @@ from WebStreamer.server.exceptions import FIleNotFound
 from datetime import datetime
 
 
+import time
+import asyncio
+from WebStreamer.vars import Var
+
+class AsyncFileCache:
+    def __init__(self, max_size: int = 5000):
+        self._cache: dict = {}
+        self._lock = asyncio.Lock()
+        self.max_size = max_size
+
+    async def get(self, message_id: int) -> Optional[FileId]:
+        entry = self._cache.get(message_id)
+        if entry:
+            file_id, timestamp = entry
+            if time.time() - timestamp < Var.CACHE_TTL:
+                return file_id
+            else:
+                self._cache.pop(message_id, None)
+        return None
+
+    async def set(self, message_id: int, file_id: FileId):
+        async with self._lock:
+            if len(self._cache) >= self.max_size:
+                # Evict expired items or oldest 10%
+                now = time.time()
+                expired = [k for k, v in self._cache.items() if now - v[1] > Var.CACHE_TTL]
+                for k in expired:
+                    self._cache.pop(k, None)
+                if len(self._cache) >= self.max_size:
+                    # Remove oldest entries
+                    sorted_keys = sorted(self._cache.keys(), key=lambda k: self._cache[k][1])
+                    for k in sorted_keys[: self.max_size // 10]:
+                        self._cache.pop(k, None)
+            self._cache[message_id] = (file_id, time.time())
+
+global_file_cache = AsyncFileCache()
+
+
 async def parse_file_id(message: "Message") -> Optional[FileId]:
     media = get_media_from_message(message)
     if media:
@@ -19,17 +57,28 @@ async def parse_file_unique_id(message: "Messages") -> Optional[str]:
         return media.file_unique_id
 
 async def get_file_ids(client: Client, chat_id: int, message_id: int) -> Optional[FileId]:
-    message = await client.get_messages(chat_id, message_id)
-    if message.empty:
-        raise FIleNotFound
-    media = get_media_from_message(message)
-    file_unique_id = await parse_file_unique_id(message)
-    file_id = await parse_file_id(message)
-    setattr(file_id, "file_size", getattr(media, "file_size", 0))
-    setattr(file_id, "mime_type", getattr(media, "mime_type", ""))
-    setattr(file_id, "file_name", getattr(media, "file_name", ""))
-    setattr(file_id, "unique_id", file_unique_id)
-    return file_id
+    cached = await global_file_cache.get(message_id)
+    if cached:
+        return cached
+
+    async with global_file_cache._lock:
+        cached = await global_file_cache.get(message_id)
+        if cached:
+            return cached
+
+        message = await client.get_messages(chat_id, message_id)
+        if message.empty:
+            raise FIleNotFound
+        media = get_media_from_message(message)
+        file_unique_id = await parse_file_unique_id(message)
+        file_id = await parse_file_id(message)
+        setattr(file_id, "file_size", getattr(media, "file_size", 0))
+        setattr(file_id, "mime_type", getattr(media, "mime_type", ""))
+        setattr(file_id, "file_name", getattr(media, "file_name", ""))
+        setattr(file_id, "unique_id", file_unique_id)
+
+        await global_file_cache.set(message_id, file_id)
+        return file_id
 
 def get_media_from_message(message: "Message") -> Any:
     media_types = (

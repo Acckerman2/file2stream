@@ -243,29 +243,33 @@ class ByteStreamer:
                     last_exc = e
             raise last_exc or RuntimeError(f"Failed to fetch chunk at offset={off}")
 
-        # ── Prefetch-pipeline streaming ──────────────────────────────────────
-        # We kick off the first chunk request, then while yielding chunk N we
-        # already start fetching chunk N+1 in the background.  This hides the
-        # Telegram round-trip latency from the client and keeps the pipe full.
-        prefetch_task: Optional[asyncio.Task] = None
-        try:
-            # Kick off the very first chunk
-            prefetch_task = asyncio.create_task(_fetch_chunk(offset))
+        # ── Multi-chunk prefetch-pipeline streaming ─────────────────────────
+        prefetch_depth = max(1, getattr(Var, "PREFETCH_CHUNKS", 2))
+        prefetch_tasks: list = []
 
-            while current_part <= part_count:
-                r = await prefetch_task
-                prefetch_task = None
+        try:
+            # Fill initial prefetch queue
+            curr_offset = offset
+            for p in range(min(prefetch_depth, part_count)):
+                prefetch_tasks.append(asyncio.create_task(_fetch_chunk(curr_offset)))
+                curr_offset += chunk_size
+
+            next_fetch_part = len(prefetch_tasks) + 1
+
+            while current_part <= part_count and prefetch_tasks:
+                task = prefetch_tasks.pop(0)
+                r = await task
 
                 if not isinstance(r, raw.types.upload.File) or not r.bytes:
                     break
 
                 chunk = r.bytes
 
-                # Pre-fetch the *next* chunk in the background before we yield
-                # the current one, so Telegram latency is hidden by the write.
-                next_offset = offset + chunk_size
-                if current_part < part_count:
-                    prefetch_task = asyncio.create_task(_fetch_chunk(next_offset))
+                # Schedule next prefetch task if remaining parts exist
+                if next_fetch_part <= part_count:
+                    prefetch_tasks.append(asyncio.create_task(_fetch_chunk(curr_offset)))
+                    curr_offset += chunk_size
+                    next_fetch_part += 1
 
                 # Slice the chunk according to the requested byte range
                 if part_count == 1:
@@ -278,26 +282,20 @@ class ByteStreamer:
                     yield chunk
 
                 current_part += 1
-                offset += chunk_size
-
-                if prefetch_task is None:
-                    # We were on the last part; nothing more to do
-                    break
 
         except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError, GeneratorExit):
             logger.debug("Download stream was cancelled or reset mid-transfer")
         except Exception as e:
             logger.warning(f"Stream error after {current_part} parts: {e}")
         finally:
-            # Cancel any in-flight prefetch so we don't leak background tasks
-            if prefetch_task and not prefetch_task.done():
-                prefetch_task.cancel()
-                try:
-                    await prefetch_task
-                except (asyncio.CancelledError, Exception):
-                    pass
+            # Cancel all in-flight prefetch tasks
+            for task in prefetch_tasks:
+                if not task.done():
+                    task.cancel()
+            if prefetch_tasks:
+                await asyncio.gather(*prefetch_tasks, return_exceptions=True)
             logger.debug(f"Finished yielding file with {current_part} parts.")
-            work_loads[index] -= 1
+            work_loads[index] = max(0, work_loads[index] - 1)
 
     
     async def clean_cache(self) -> None:

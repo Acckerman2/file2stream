@@ -14,16 +14,34 @@ class Database:
         self.db = self._client[database_name]
         self.col = self.db.users
         self.banned_users_col = self.db.banned_users
+        self._known_user_ids: set = set()
+        self._banned_user_ids: set = set()
 
     async def ensure_indexes(self):
-        """Create database indexes for better performance"""
+        """Create database indexes for better performance and preload caches"""
         try:
             await self.col.create_index("id", unique=True)
             await self.banned_users_col.create_index("user_id", unique=True)
             logger.info("Database indexes ensured.")
+            await self.load_cache()
         except Exception as e:
             logger.error(f"Error in ensure_indexes: {e}", exc_info=True)
-            raise
+
+    async def load_cache(self):
+        """Pre-load user and banned user IDs into memory for sub-millisecond lookups"""
+        try:
+            async for doc in self.col.find({}, {"id": 1}):
+                if "id" in doc:
+                    self._known_user_ids.add(doc["id"])
+            async for doc in self.banned_users_col.find({}, {"user_id": 1}):
+                if "user_id" in doc:
+                    self._banned_user_ids.add(doc["user_id"])
+            logger.info(
+                f"Database cache loaded: {len(self._known_user_ids)} users, "
+                f"{len(self._banned_user_ids)} banned."
+            )
+        except Exception as e:
+            logger.warning(f"Error loading DB cache: {e}")
 
     def new_user(self, user_id: int) -> dict:
         """Create a new user document"""
@@ -34,11 +52,15 @@ class Database:
 
     async def add_user(self, user_id: int) -> bool:
         """Add a new user to the database"""
+        if user_id in self._known_user_ids:
+            return False
         try:
             if not await self.is_user_exist(user_id):
                 await self.col.insert_one(self.new_user(user_id))
+                self._known_user_ids.add(user_id)
                 logger.info(f"Added new user {user_id} to database.")
                 return True
+            self._known_user_ids.add(user_id)
             return False
         except Exception as e:
             logger.error(f"Error in add_user for user {user_id}: {e}", exc_info=True)
@@ -46,9 +68,14 @@ class Database:
 
     async def is_user_exist(self, user_id: int) -> bool:
         """Check if a user exists in the database"""
+        if user_id in self._known_user_ids:
+            return True
         try:
             user = await self.col.find_one({'id': user_id}, {'_id': 1})
-            return bool(user)
+            if user:
+                self._known_user_ids.add(user_id)
+                return True
+            return False
         except Exception as e:
             logger.error(f"Error in is_user_exist for user {user_id}: {e}", exc_info=True)
             raise
@@ -69,6 +96,7 @@ class Database:
         """Delete a user from the database"""
         try:
             result = await self.col.delete_one({'id': user_id})
+            self._known_user_ids.discard(user_id)
             if result.deleted_count > 0:
                 logger.info(f"Deleted user {user_id}.")
                 return True
@@ -103,6 +131,7 @@ class Database:
                 {"$set": ban_data},
                 upsert=True
             )
+            self._banned_user_ids.add(user_id)
             logger.info(f"Added/Updated banned user {user_id}. Reason: {reason}")
         except Exception as e:
             logger.error(f"Error in add_banned_user for user {user_id}: {e}", exc_info=True)
@@ -112,6 +141,7 @@ class Database:
         """Remove a user from banned list"""
         try:
             result = await self.banned_users_col.delete_one({"user_id": user_id})
+            self._banned_user_ids.discard(user_id)
             if result.deleted_count > 0:
                 logger.info(f"Removed banned user {user_id}.")
                 return True
@@ -122,8 +152,13 @@ class Database:
 
     async def is_user_banned(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Check if a user is banned, returns ban info if banned"""
+        if user_id in self._banned_user_ids:
+            return {"user_id": user_id}
         try:
-            return await self.banned_users_col.find_one({"user_id": user_id})
+            ban = await self.banned_users_col.find_one({"user_id": user_id})
+            if ban:
+                self._banned_user_ids.add(user_id)
+            return ban
         except Exception as e:
             logger.error(f"Error in is_user_banned for user {user_id}: {e}", exc_info=True)
             return None
